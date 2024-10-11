@@ -1,17 +1,24 @@
-import asyncio
-import json
 import os
-import random
 import re
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import parse_qs
-
+import sys
+import json
+import anyio
+import httpx
+import random
+import argparse
+import asyncio
+import platform
 import aiofiles
 import aiofiles.ospath
-import httpx
-from colorama import Fore, Style, init
+import python_socks
+from glob import glob
+from urllib.parse import unquote, parse_qs
+from colorama import init, Fore, Style
+from datetime import datetime
+from pathlib import Path
+from models import *
 from fake_useragent import UserAgent
+from httpx_socks import AsyncProxyTransport
 
 init(autoreset=True)
 red = Fore.LIGHTRED_EX
@@ -22,15 +29,16 @@ black = Fore.LIGHTBLACK_EX
 white = Fore.LIGHTWHITE_EX
 reset = Style.RESET_ALL
 magenta = Fore.LIGHTMAGENTA_EX
-
+proxy_file = "proxies.txt"
 log_file = "http.log"
-
+ses_dir = "sessions"
 
 class Config:
     def __init__(
         self,
         colors,
         countdown,
+        start_param,
         auto_upgrade,
         swtime,
         ewtime,
@@ -38,18 +46,24 @@ class Config:
     ):
         self.colors = colors
         self.countdown = countdown
+        self.start_param = start_param
         self.auto_upgrade = auto_upgrade
         self.swtime = swtime
         self.ewtime = ewtime
         self.disable_log = disable_log
 
-
 class NotPixTod:
-    def __init__(self, no, config):
+    def __init__(self, no, config, proxies):
         ci = lambda a, b: (b * 1000) + (a + 1)
         self.cfg: Config = config
         self.p = no
-        self.ses = httpx.AsyncClient(timeout=1000)
+        self.proxies = proxies
+        if len(proxies) > 0:
+            proxy = self.get_random_proxy(no)
+            transport = AsyncProxyTransport.from_url(proxy)
+            self.ses = httpx.AsyncClient(transport=transport, timeout=1000)
+        else:
+            self.ses = httpx.AsyncClient(timeout=1000)
         self.colors = [
             "#3690ea",
             "#e46e6e",
@@ -69,12 +83,12 @@ class NotPixTod:
                 "block": [[ci(245, x), ci(311, x)] for x in range(547, 592, 1)],
             },
             {
-                "color": "#3690EA",
-                "block": [[ci(243, x), ci(296, x)] for x in range(461, 515, 1)]
+                "color":"#3690EA",
+                "block": [[ci(243,x),ci(296,x)] for x in range(461,515,1)]
             },
             {
-                "color": "#3690EA",
-                "block": [[ci(704, x), ci(755, x)] for x in range(659, 684, 1)]
+                "color":"#3690EA",
+                "block": [[ci(704,x),ci(755,x)] for x in range(659,684,1)]
             }
         ]
 
@@ -83,6 +97,32 @@ class NotPixTod:
         print(
             f"{black}[{now}]{white}-{blue}[{white}acc {self.p + 1}{blue}]{white} {msg}{reset}"
         )
+
+    async def ipinfo(self):
+        ipinfo1_url = "https://ipapi.co/json/"
+        ipinfo2_url = "https://ipwho.is/"
+        ipinfo3_url = "https://freeipapi.com/api/json"
+        headers = {"user-agent": "marin kitagawa"}
+        try:
+            res = await self.http(ipinfo1_url, headers)
+            ip = res.json().get("ip")
+            country = res.json().get("country")
+            if not ip:
+                res = await self.http(ipinfo2_url, headers)
+                ip = res.json().get("ip")
+                country = res.json().get("country_code")
+                if not ip:
+                    res = await self.http(ipinfo3_url, headers)
+                    ip = res.json().get("ipAddress")
+                    country = res.json().get("countryCode")
+            self.log(f"{green}ip : {white}{ip} {green}country : {white}{country}")
+        except json.decoder.JSONDecodeError:
+            self.log(f"{green}ip : {white}None {green}country : {white}None")
+
+    def get_random_proxy(self, isself, israndom=False):
+        if israndom:
+            return random.choice(self.proxies)
+        return self.proxies[isself % len(self.proxies)]
 
     async def http(self, url, headers, data=None):
         while True:
@@ -110,6 +150,18 @@ class NotPixTod:
                     continue
 
                 return res
+            except (
+                httpx.ProxyError,
+                python_socks._errors.ProxyTimeoutError,
+                python_socks._errors.ProxyError,
+                python_socks._errors.ProxyConnectionError,
+            ):
+                proxy = self.get_random_proxy(0, israndom=True)
+                transport = AsyncProxyTransport.from_url(proxy)
+                self.ses = httpx.AsyncClient(transport=transport)
+                self.log(f"{yellow}proxy error,selecting random proxy !")
+                await asyncio.sleep(3)
+                continue
             except httpx.NetworkError:
                 self.log(f"{yellow}network error !")
                 await asyncio.sleep(3)
@@ -127,18 +179,26 @@ class NotPixTod:
                 await asyncio.sleep(3)
                 continue
 
-    async def start(self, query):
-        if query is None:
-            return
+
+    async def start(self, query_id):
+        proxy = None
+        if len(self.proxies) > 0:
+            unique = random.randint(0, len(self.proxies) - 1)
+            proxy = self.proxies[unique]
+            await self.ipinfo()
+
+        query = query_id
 
         marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
         parser = marin(query)
         user = parser.get("user")
         uid = re.search(r'id":(.*?),', user).group(1)
         res = await get_by_id(uid)
-        if res is None:
-            self.log(f"{red}user {uid} not found in database, please create session first !")
-            return
+        if not res:
+            first_name = re.search(r'"first_name":"(.*?)"', user).group(1)
+            await insert(uid, first_name)
+            ua = UserAgent().random
+            await update_useragent(uid, ua)
         useragent = res.get("useragent")
         headers = {
             "accept": "application/json, text/plain, */*",
@@ -186,7 +246,7 @@ class NotPixTod:
                         self.log(f"failed paint pixel id : {white}{pixel_id}")
                         continue
                     new_balance = int(res.json().get("balance"))
-inc = new_balance - balance
+                    inc = new_balance - balance
                     balance = new_balance
                     self.log(
                         f"{green}success paint id : {white}{pixel_id}{green},{white}reward {green}+{inc}"
@@ -207,22 +267,28 @@ inc = new_balance - balance
                         continue
                     self.log(f"{green}success buy booster {white}{boost}")
 
+def get_sessions():
+    return glob(f"{ses_dir}/*.txt")  # Changed from '.session' to '.txt'
 
-def get_queries():
-    if not os.path.exists("data.txt"):
-        open("data.txt", "a")
-    queries = open("data.txt").read().splitlines()
-    return queries
+def get_datas(proxy_file):
+    if not os.path.exists(proxy_file):
+        open(proxy_file, "a")
+    proxies = open(proxy_file).read().splitlines()
+    return proxies
 
-
-async def bound(sem, data, query):
+async def bound(sem, data, query_id):
     async with sem:
-        return await NotPixTod(*data).start(query)
-
+        return await NotPixTod(*data).start(query_id)
 
 async def main():
     await initdb()
     arg = argparse.ArgumentParser()
+    arg.add_argument(
+        "--proxy",
+        "-P",
+        default=proxy_file,
+        help=f"Perform custom input for proxy files (default : {proxy_file})",
+    )
     arg.add_argument(
         "--action",
         "-A",
@@ -243,26 +309,29 @@ async def main():
         config = Config(
             colors=cfg.get("colors"),
             countdown=cfg.get("countdown"),
+            start_param=cfg.get("referral_code"),
             auto_upgrade=cfg.get("auto_upgrade"),
             swtime=cfg.get("time_before_start", [30, 60])[0],
             ewtime=cfg.get("time_before_start", [30, 60])[1],
             disable_log=disable_log,
         )
     banner = f"""
-{magenta}┏┓┳┓┏┓  ┏┓    •      {white}NotPixTod Auto Claim for {green}N*t P*xel
-{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[REDACTED]
-{magenta}┗┛┻┛┗┛  ┣┛┛ ┗┛┃┗ ┗┗  {green}Note : {white}Every Action Has a Consequence
-{magenta}              ┛      
-        """
+{magenta}┏┓┳┓┏┓  ┏┓   •       {white}NotPixTod Auto Claim for {green}N*t P*xel
+{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[redacted]
+{magenta}┗┛┻┛┗┛  ┣┛┛ ┗┛┃┗ ┗┗  {green}Note : {white}Every Action Has a Consequence
+{magenta}        ┛     
+    """
     main_menu = f"""
-     {white}1{green}. {white}Add/Create Session 
-     {white}2{green}. {white}Start Bot (Multi Process)
-     {white}3{green}. {white}Start Bot (Single Process)
-     """
-    queries = get_queries()
+    {white}1{green}. {white}Add/Create Session 
+    {white}2{green}. {white}Start Bot (Multi Process)
+    {white}3{green}. {white}Start Bot (Single Process)
+    """
+    sessions = get_sessions()
+    proxies = get_datas(proxy_file=args.proxy)
     your_data = f"""
-{white}Total initData : {green}{len(queries)}
-        """
+{white}Total session : {green}{len(sessions)}
+{white}Total proxy : {green}{len(proxies)}
+    """
     while True:
         if not args.marin:
             os.system("cls" if os.name == "nt" else "clear")
@@ -274,20 +343,19 @@ async def main():
             print(main_menu)
             option = input(f"{white}[{yellow}?{white}] {yellow}input number : {reset}")
         if option == "1":
-            query = input(
-                f"{white}[{yellow}?{white}] {yellow}input initData : {reset}"
+            query_id = input(
+                f"{white}[{yellow}?{white}] {yellow}Input Query ID : {reset}"
             )
-            x = NotPixTod(no=0, config=config)
+            # Extract user data from query_id and store it in the database
             marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
-            parser = marin(query)
+            parser = marin(query_id)
             user = parser.get("user")
             uid = re.search(r'id":(.*?),', user).group(1)
             first_name = re.search(r'"first_name":"(.*?)"', user).group(1)
-            res = await get_by_id(uid)
-            if not res:
-                await insert(uid, first_name)
-                ua = UserAgent().random
-                await update_useragent(uid, ua)
+            await insert(uid, first_name)
+            ua = UserAgent().random
+            await update_useragent(uid, ua)
+            self.log(f"{green}Session added for user: {white}{first_name}")
             input(f"{blue}press enter to continue !")
             continue
         elif option == "2":
@@ -299,21 +367,23 @@ async def main():
                     worker = 1
             sema = asyncio.Semaphore(worker)
             while True:
-                queries = get_queries()
+                sessions = get_sessions()
+                proxies = get_datas(proxy_file=args.proxy)
                 tasks = [
                     asyncio.create_task(
-                        bound(sema, (no, config), query)
+                        bound(sema, (no, config, proxies), Path(query_id).stem)
                     )
-                    for no, query in enumerate(queries)
+                    for no, query_id in enumerate(sessions)
                 ]
                 result = await asyncio.gather(*tasks)
                 await countdown(config.countdown)
         elif option == "3":
             while True:
-                queries = get_queries()
-                for no, query in enumerate(queries):
-                    await NotPixTod(no=no, config=config).start(
-                        query=query
+                sessions = get_sessions()
+                proxies = get_datas(proxy_file=args.proxy)
+                for no, query_id in enumerate(sessions):
+                    await NotPixTod(no=no, config=config, proxies=proxies).start(
+                        query_id=Path(query_id).stem
                     )
                 await countdown(config.countdown)
 
