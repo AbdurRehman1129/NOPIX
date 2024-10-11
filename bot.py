@@ -190,23 +190,23 @@ class NotPixTod:
         query = query_id
 
         marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
-    parser = marin(query_id)
-    user_str = parser.get("user")  # Get the raw JSON string
+        parser = marin(query_id)
+        user_str = parser.get("user")
 
-    if user_str is None:
-        self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
-        return
+        if user_str is None:
+            self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
+            return
 
-    try:
-        user = json.loads(user_str)  # Decode the JSON string into a dictionary
-    except json.JSONDecodeError:
-        self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
-        return
+        try:
+            user = json.loads(user_str)
+        except json.JSONDecodeError:
+            self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
+            return
 
-    uid = str(user.get("id"))  # Extract the user ID from the dictionary
+        uid = str(user.get("id"))
         res = await get_by_id(uid)
         if not res:
-            first_name = re.search(r'"first_name":"(.*?)"', user).group(1)
+            first_name = user.get("first_name")
             await insert(uid, first_name)
             ua = UserAgent().random
             await update_useragent(uid, ua)
@@ -279,7 +279,7 @@ class NotPixTod:
                     self.log(f"{green}success buy booster {white}{boost}")
 
 def get_sessions():
-    return glob(f"{ses_dir}/*.txt")  # Changed from '.session' to '.txt'
+    return glob(f"{ses_dir}/*.txt")
 
 def get_datas(proxy_file):
     if not os.path.exists(proxy_file):
@@ -357,12 +357,23 @@ async def main():
             query_id = input(
                 f"{white}[{yellow}?{white}] {yellow}Input Query ID : {reset}"
             )
-            # Extract user data from query_id and store it in the database
             marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
             parser = marin(query_id)
-            user = parser.get("user")
-            uid = re.search(r'id":(.*?),', user).group(1)
-            first_name = re.search(r'"first_name":"(.*?)"', user).group(1)
+            user_str = parser.get("user")
+
+            if user_str is None:
+                self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
+                continue
+
+            try:
+                user = json.loads(user_str)
+            except json.JSONDecodeError:
+                self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
+                continue
+
+            uid = str(user.get("id"))
+            first_name = user.get("first_name")
+
             await insert(uid, first_name)
             ua = UserAgent().random
             await update_useragent(uid, ua)
