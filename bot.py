@@ -289,7 +289,7 @@ def get_datas(proxy_file):
 
 async def bound(sem, data, query_id):
     async with sem:
-        return await NotPixTod(*data).start(query_id)
+        return await NotPixTod(*data).start(query_id)  # Pass query_id directly
 
 async def main():
     await initdb()
@@ -381,8 +381,7 @@ async def main():
             input(f"{blue}press enter to continue !")
             continue
         elif option == "2":
-            if args.worker:
-                worker = int(args.worker)
+            if args.worker:worker = int(args.worker)
             else:
                 worker = int(os.cpu_count() / 2)
                 if worker <= 0:
@@ -393,7 +392,7 @@ async def main():
                 proxies = get_datas(proxy_file=args.proxy)
                 tasks = [
                     asyncio.create_task(
-                        bound(sema, (no, config, proxies), Path(query_id).stem)
+                        bound(sema, (no, config, proxies), query_id)  # Pass query_id directly
                     )
                     for no, query_id in enumerate(sessions)
                 ]
@@ -405,7 +404,7 @@ async def main():
                 proxies = get_datas(proxy_file=args.proxy)
                 for no, query_id in enumerate(sessions):
                     await NotPixTod(no=no, config=config, proxies=proxies).start(
-                        query_id=Path(query_id).stem
+                        query_id=query_id  # Pass query_id directly
                     )
                 await countdown(config.countdown)
 
