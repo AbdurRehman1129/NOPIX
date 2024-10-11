@@ -57,7 +57,7 @@ async def get_all():
     """
     out = []
     async with aiosqlite.connect(database=database) as db:
-db.row_factory = aiosqlite.Row
+        db.row_factory = aiosqlite.Row
         async with db.execute(query) as cur:
             result = await cur.fetchall()
             for res in result:
