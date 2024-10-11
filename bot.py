@@ -190,9 +190,20 @@ class NotPixTod:
         query = query_id
 
         marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
-        parser = marin(query)
-        user = parser.get("user")
-        uid = re.search(r'id":(.*?),', user).group(1)
+    parser = marin(query_id)
+    user_str = parser.get("user")  # Get the raw JSON string
+
+    if user_str is None:
+        self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
+        return
+
+    try:
+        user = json.loads(user_str)  # Decode the JSON string into a dictionary
+    except json.JSONDecodeError:
+        self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
+        return
+
+    uid = str(user.get("id"))  # Extract the user ID from the dictionary
         res = await get_by_id(uid)
         if not res:
             first_name = re.search(r'"first_name":"(.*?)"', user).group(1)
