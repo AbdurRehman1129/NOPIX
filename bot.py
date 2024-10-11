@@ -215,7 +215,8 @@ class NotPixTod:
         uid = str(user.get("id"))
         res = await get_by_id(uid)
         if res is None:
-            first_name = user.get("first_name")await insert(uid, first_name)
+            first_name = user.get("first_name")
+            await insert(uid, first_name)
             ua = UserAgent().random
             await update_useragent(uid, ua)
             res = await get_by_id(uid)
@@ -357,7 +358,7 @@ async def main():
                         disable_log=disable_log)
     banner = f"""
 {magenta}┏┓┳┓┏┓  ┏┓   •       {white}NotPixTod Auto Claim for {green}N*t P*xel
-{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[DARK DEVIL]
+{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[redacted]
 {magenta}┗┛┻┛┗┛  ┣┛┛ ┗┛┃┗ ┗┗  {green}Note : {white}Every Action Has a Consequence
 {magenta}        ┛     
     """
