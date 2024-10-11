@@ -33,6 +33,7 @@ proxy_file = "proxies.txt"
 log_file = "http.log"
 ses_dir = "sessions"
 
+
 class Config:
     def __init__(
         self,
@@ -51,6 +52,7 @@ class Config:
         self.swtime = swtime
         self.ewtime = ewtime
         self.disable_log = disable_log
+
 
 class NotPixTod:
     def __init__(self, no, config, proxies):
@@ -83,12 +85,12 @@ class NotPixTod:
                 "block": [[ci(245, x), ci(311, x)] for x in range(547, 592, 1)],
             },
             {
-                "color":"#3690EA",
-                "block": [[ci(243,x),ci(296,x)] for x in range(461,515,1)]
+                "color": "#3690EA",
+                "block": [[ci(243, x), ci(296, x)] for x in range(461, 515, 1)]
             },
             {
-                "color":"#3690EA",
-                "block": [[ci(704,x),ci(755,x)] for x in range(659,684,1)]
+                "color": "#3690EA",
+                "block": [[ci(704, x), ci(755, x)] for x in range(659, 684, 1)]
             }
         ]
 
@@ -142,7 +144,9 @@ class NotPixTod:
                 else:
                     res = await self.ses.post(url, headers=headers, data=data)
                 if not self.cfg.disable_log:
-                    async with aiofiles.open(log_file, "a", encoding="utf-8") as hw:
+                    async with aiofiles.open(log_file,
+                                            "a",
+                                            encoding="utf-8") as hw:
                         await hw.write(f"{res.status_code} {res.text}\n")
                 if "<title>" in res.text or res.text[0] != "{":
                     self.log(f"{yellow}failed get json response !")
@@ -179,7 +183,6 @@ class NotPixTod:
                 await asyncio.sleep(3)
                 continue
 
-
     async def start(self, query_id):
         proxy = None
         if len(self.proxies) > 0:
@@ -189,18 +192,25 @@ class NotPixTod:
 
         query = query_id
 
-        marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
+        marin = lambda data: {
+            key: value[0]
+            for key, value in parse_qs(data).items()
+        }
         parser = marin(query_id)
         user_str = parser.get("user")
 
         if user_str is None:
-            self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
+            self.log(
+                f"{red}Error: Could not extract user information from query ID. Skipping session."
+            )
             return
 
         try:
             user = json.loads(user_str)
         except json.JSONDecodeError:
-            self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
+            self.log(
+                f"{red}Error: Invalid JSON format in user data. Skipping session."
+            )
             return
 
         uid = str(user.get("id"))
@@ -278,8 +288,10 @@ class NotPixTod:
                         continue
                     self.log(f"{green}success buy booster {white}{boost}")
 
+
 def get_sessions():
     return glob(f"{ses_dir}/*.txt")
+
 
 def get_datas(proxy_file):
     if not os.path.exists(proxy_file):
@@ -287,9 +299,11 @@ def get_datas(proxy_file):
     proxies = open(proxy_file).read().splitlines()
     return proxies
 
+
 async def bound(sem, data, query_id):
     async with sem:
-        return await NotPixTod(*data).start(query_id)  # Pass query_id directly
+        return await NotPixTod(*data).start(query_id)
+
 
 async def main():
     await initdb()
@@ -357,18 +371,25 @@ async def main():
             query_id = input(
                 f"{white}[{yellow}?{white}] {yellow}Input Query ID : {reset}"
             )
-            marin = lambda data: {key: value[0] for key, value in parse_qs(data).items()}
+            marin = lambda data: {
+                key: value[0]
+                for key, value in parse_qs(data).items()
+            }
             parser = marin(query_id)
             user_str = parser.get("user")
 
             if user_str is None:
-                self.log(f"{red}Error: Could not extract user information from query ID. Skipping session.")
+                self.log(
+                    f"{red}Error: Could not extract user information from query ID. Skipping session."
+                )
                 continue
 
             try:
                 user = json.loads(user_str)
             except json.JSONDecodeError:
-                self.log(f"{red}Error: Invalid JSON format in user data. Skipping session.")
+                self.log(
+                    f"{red}Error: Invalid JSON format in user data. Skipping session."
+                )
                 continue
 
             uid = str(user.get("id"))
@@ -381,7 +402,8 @@ async def main():
             input(f"{blue}press enter to continue !")
             continue
         elif option == "2":
-            if args.worker:worker = int(args.worker)
+            if args.worker:
+                worker = int(args.worker)
             else:
                 worker = int(os.cpu_count() / 2)
                 if worker <= 0:
@@ -390,22 +412,24 @@ async def main():
             while True:
                 sessions = get_sessions()
                 proxies = get_datas(proxy_file=args.proxy)
-                tasks = [
-                    asyncio.create_task(
-                        bound(sema, (no, config, proxies), query_id)  # Pass query_id directly
-                    )
-                    for no, query_id in enumerate(sessions)
-                ]
+                tasks = []
+                for no, session in enumerate(sessions):
+                    with open(session, 'r') as f:
+                        query_id = f.read()
+                    tasks.append(
+                        asyncio.create_task(
+                            bound(sema, (no, config, proxies), query_id)))
                 result = await asyncio.gather(*tasks)
                 await countdown(config.countdown)
         elif option == "3":
             while True:
                 sessions = get_sessions()
                 proxies = get_datas(proxy_file=args.proxy)
-                for no, query_id in enumerate(sessions):
-                    await NotPixTod(no=no, config=config, proxies=proxies).start(
-                        query_id=query_id  # Pass query_id directly
-                    )
+                for no, session in enumerate(sessions):
+                    with open(session, 'r') as f:
+                        query_id = f.read()
+                    await NotPixTod(no=no, config=config,
+                                    proxies=proxies).start(query_id=query_id)
                 await countdown(config.countdown)
 
 
