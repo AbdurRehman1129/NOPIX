@@ -30,6 +30,7 @@ magenta = Fore.LIGHTMAGENTA_EX
 proxy_file = "proxies.txt"
 log_file = "http.log"
 
+
 class Config:
     def __init__(
         self,
@@ -48,6 +49,7 @@ class Config:
         self.swtime = swtime
         self.ewtime = ewtime
         self.disable_log = disable_log
+
 
 class NotPixTod:
     def __init__(self, no, config, proxies):
@@ -143,8 +145,10 @@ class NotPixTod:
                                             "a",
                                             encoding="utf-8") as hw:
                         await hw.write(f"{res.status_code} {res.text}\n")
-                if "<title>" in res.text or res.text[0] != "{":
-                    self.log(f"{yellow}failed get json response !")
+                if not res.is_success:
+                    self.log(
+                        f"{yellow}failed get json response !, code : {res.status_code}"
+                    )
                     await countdown(3)
                     continue
 
@@ -211,11 +215,10 @@ class NotPixTod:
         uid = str(user.get("id"))
         res = await get_by_id(uid)
         if res is None:
-            first_name = user.get("first_name")
-            await insert(uid, first_name)
+            first_name = user.get("first_name")await insert(uid, first_name)
             ua = UserAgent().random
             await update_useragent(uid, ua)
-            res = await get_by_id(uid)  # Fetch the newly created user data
+            res = await get_by_id(uid)
 
         useragent = res.get("useragent")
         headers = {
@@ -239,10 +242,22 @@ class NotPixTod:
         res = await self.http(me_url, headers)
         while True:
             res = await self.http(status_url, headers)
-            balance = int(res.json().get("userBalance", 0))
+            try:
+                res_json = res.json()
+            except json.decoder.JSONDecodeError:
+                self.log(f"{yellow}failed to decode json response !")
+                await countdown(3)
+                continue
+
+            balance = int(res_json.get("userBalance", 0))
             await update_balance(uid, balance)
             self.log(f"{green}account balance : {white}{balance}")
-            charges = res.json().get("charges") // 2
+            if "charges" not in res_json:
+                self.log(f"{yellow}charges key not found in json response !")
+                await countdown(3)
+                continue
+
+            charges = res_json.get("charges") // 2
             if charges <= 0:
                 break
             for i in range(charges):
@@ -285,6 +300,7 @@ class NotPixTod:
                         continue
                     self.log(f"{green}success buy booster {white}{boost}")
 
+
 def get_sessions():
     if not os.path.exists("data.txt"):
         return []
@@ -292,25 +308,28 @@ def get_sessions():
         sessions = f.read().splitlines()
     return sessions
 
+
 def get_datas(proxy_file):
     if not os.path.exists(proxy_file):
         open(proxy_file, "a")
     proxies = open(proxy_file).read().splitlines()
     return proxies
 
+
 async def bound(sem, data, query_id):
     async with sem:
         return await NotPixTod(*data).start(query_id)
 
+
 async def main():
     await initdb()
     arg = argparse.ArgumentParser()
-    arg.add_argument(
-        "--proxy",
-        "-P",
-        default=proxy_file,
-        help=f"Perform custom input for proxy files (default : {proxy_file})",
-    )
+    arg.add_argument("--proxy",
+                        "-P",
+                        default=proxy_file,
+                        help=
+                        f"Perform custom input for proxy files (default : {proxy_file})"
+                        )
     arg.add_argument(
         "--action",
         "-A",
@@ -319,7 +338,8 @@ async def main():
     arg.add_argument(
         "--worker",
         "-W",
-        help="Total workers or number of threads to be used (default : cpu core / 2)",
+        help=
+        "Total workers or number of threads to be used (default : cpu core / 2)",
     )
     arg.add_argument("--marin", action="store_true")
     arg.add_argument("--disable-log", action="store_true")
@@ -328,18 +348,16 @@ async def main():
     async with aiofiles.open("config.json") as r:
         read = await r.read()
         cfg = json.loads(read)
-        config = Config(
-            colors=cfg.get("colors"),
-            countdown=cfg.get("countdown"),
-            start_param=cfg.get("referral_code"),
-            auto_upgrade=cfg.get("auto_upgrade"),
-            swtime=cfg.get("time_before_start", [30, 60])[0],
-            ewtime=cfg.get("time_before_start", [30, 60])[1],
-            disable_log=disable_log,
-        )
+        config = Config(colors=cfg.get("colors"),
+                        countdown=cfg.get("countdown"),
+                        start_param=cfg.get("referral_code"),
+                        auto_upgrade=cfg.get("auto_upgrade"),
+                        swtime=cfg.get("time_before_start", [30, 60])[0],
+                        ewtime=cfg.get("time_before_start", [30, 60])[1],
+                        disable_log=disable_log)
     banner = f"""
 {magenta}┏┓┳┓┏┓  ┏┓   •       {white}NotPixTod Auto Claim for {green}N*t P*xel
-{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[redacted]
+{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}[DARK DEVIL]
 {magenta}┗┛┻┛┗┛  ┣┛┛ ┗┛┃┗ ┗┗  {green}Note : {white}Every Action Has a Consequence
 {magenta}        ┛     
     """
@@ -399,7 +417,6 @@ async def main():
                 await update_useragent(uid, ua)
                 self.log(f"{green}Session added for user: {white}{first_name}")
 
-                # Add the new query ID to data.txt
                 with open("data.txt", "a") as f:
                     f.write(query_id + "\n")
 
@@ -432,6 +449,7 @@ async def main():
                                     proxies=proxies).start(query_id=query_id)
                 await countdown(config.countdown)
 
+
 async def countdown(t):
     for i in range(t, 0, -1):
         minute, seconds = divmod(i, 60)
@@ -441,6 +459,7 @@ async def countdown(t):
         hour = str(hour).zfill(2)
         print(f"waiting for {hour}:{minute}:{seconds} ", flush=True, end="\r")
         await asyncio.sleep(1)
+
 
 if __name__ == "__main__":
     try:
