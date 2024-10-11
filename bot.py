@@ -11,11 +11,9 @@ import platform
 import aiofiles
 import aiofiles.ospath
 import python_socks
-from glob import glob
 from urllib.parse import unquote, parse_qs
 from colorama import init, Fore, Style
 from datetime import datetime
-from pathlib import Path
 from models import *
 from fake_useragent import UserAgent
 from httpx_socks import AsyncProxyTransport
@@ -31,8 +29,6 @@ reset = Style.RESET_ALL
 magenta = Fore.LIGHTMAGENTA_EX
 proxy_file = "proxies.txt"
 log_file = "http.log"
-ses_dir = "sessions"
-
 
 class Config:
     def __init__(
@@ -52,7 +48,6 @@ class Config:
         self.swtime = swtime
         self.ewtime = ewtime
         self.disable_log = disable_log
-
 
 class NotPixTod:
     def __init__(self, no, config, proxies):
@@ -215,11 +210,13 @@ class NotPixTod:
 
         uid = str(user.get("id"))
         res = await get_by_id(uid)
-        if not res:
+        if res is None:
             first_name = user.get("first_name")
             await insert(uid, first_name)
             ua = UserAgent().random
             await update_useragent(uid, ua)
+            res = await get_by_id(uid)  # Fetch the newly created user data
+
         useragent = res.get("useragent")
         headers = {
             "accept": "application/json, text/plain, */*",
@@ -288,10 +285,12 @@ class NotPixTod:
                         continue
                     self.log(f"{green}success buy booster {white}{boost}")
 
-
 def get_sessions():
-    return glob(f"{ses_dir}/*.txt")
-
+    if not os.path.exists("data.txt"):
+        return []
+    with open("data.txt", "r") as f:
+        sessions = f.read().splitlines()
+    return sessions
 
 def get_datas(proxy_file):
     if not os.path.exists(proxy_file):
@@ -299,11 +298,9 @@ def get_datas(proxy_file):
     proxies = open(proxy_file).read().splitlines()
     return proxies
 
-
 async def bound(sem, data, query_id):
     async with sem:
         return await NotPixTod(*data).start(query_id)
-
 
 async def main():
     await initdb()
@@ -395,10 +392,17 @@ async def main():
             uid = str(user.get("id"))
             first_name = user.get("first_name")
 
-            await insert(uid, first_name)
-            ua = UserAgent().random
-            await update_useragent(uid, ua)
-            self.log(f"{green}Session added for user: {white}{first_name}")
+            existing_user = await get_by_id(uid)
+            if existing_user is None:
+                await insert(uid, first_name)
+                ua = UserAgent().random
+                await update_useragent(uid, ua)
+                self.log(f"{green}Session added for user: {white}{first_name}")
+
+                # Add the new query ID to data.txt
+                with open("data.txt", "a") as f:
+                    f.write(query_id + "\n")
+
             input(f"{blue}press enter to continue !")
             continue
         elif option == "2":
@@ -413,9 +417,7 @@ async def main():
                 sessions = get_sessions()
                 proxies = get_datas(proxy_file=args.proxy)
                 tasks = []
-                for no, session in enumerate(sessions):
-                    with open(session, 'r') as f:
-                        query_id = f.read()
+                for no, query_id in enumerate(sessions):
                     tasks.append(
                         asyncio.create_task(
                             bound(sema, (no, config, proxies), query_id)))
@@ -425,13 +427,10 @@ async def main():
             while True:
                 sessions = get_sessions()
                 proxies = get_datas(proxy_file=args.proxy)
-                for no, session in enumerate(sessions):
-                    with open(session, 'r') as f:
-                        query_id = f.read()
+                for no, query_id in enumerate(sessions):
                     await NotPixTod(no=no, config=config,
                                     proxies=proxies).start(query_id=query_id)
                 await countdown(config.countdown)
-
 
 async def countdown(t):
     for i in range(t, 0, -1):
@@ -442,7 +441,6 @@ async def countdown(t):
         hour = str(hour).zfill(2)
         print(f"waiting for {hour}:{minute}:{seconds} ", flush=True, end="\r")
         await asyncio.sleep(1)
-
 
 if __name__ == "__main__":
     try:
